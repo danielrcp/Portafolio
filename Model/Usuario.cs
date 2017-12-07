@@ -5,20 +5,23 @@ namespace Model
     using System.Collections.Generic;
     using System.ComponentModel.DataAnnotations;
     using System.ComponentModel.DataAnnotations.Schema;
+    using System.Data.Entity;
+    using System.Data.Entity.Infrastructure;
     using System.Data.Entity.Spatial;
+    using System.Data.Entity.Validation;
+    using System.IO;
     using System.Linq;
+    using System.Web;
 
     [Table("Usuario")]
     public partial class Usuario
     {
-        private readonly PortafolioContext context;
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Usage", "CA2214:DoNotCallOverridableMethodsInConstructors")]
         public Usuario()
         {
             Experiencia = new HashSet<Experiencia>();
             Habilidad = new HashSet<Habilidad>();
             Testimonio = new HashSet<Testimonio>();
-            context = new PortafolioContext();
         }
 
         public int id { get; set; }
@@ -84,9 +87,9 @@ namespace Model
             string clave = HashHelper.MD5(password);
             try
             {
-                using (context)
+                using (var ctx = new PortafolioContext())
                 {
-                    var usuario = context.Usuario.Where(u => u.Email.Equals(email) && u.Password.Equals(clave)).SingleOrDefault();
+                    var usuario = ctx.Usuario.Where(u => u.Email.Equals(email) && u.Password.Equals(clave)).SingleOrDefault();
                     if (usuario != null)
                     {
                         SessionHelper.AddUserToSession(usuario.id.ToString());
@@ -115,9 +118,9 @@ namespace Model
             var Usuario = new Usuario();
             try
             {
-                using (context)
+                using (var ctx = new PortafolioContext())
                 {
-                    Usuario = context.Usuario.Find(id);
+                    Usuario = ctx.Usuario.Find(id);
                 }
             }
             catch (Exception)
@@ -127,15 +130,50 @@ namespace Model
             return Usuario;
         }
 
-        /// <summary>
-        /// Releases unmanaged and - optionally - managed resources.
-        /// </summary>
-        /// <author></author>
-        /// <datetime></datetime>
-        public void Dispose()
+
+        public ResponseModel Guardar(HttpPostedFileBase Foto)
         {
-            if (context != null)
-                context.Dispose();
+            var rm = new ResponseModel();
+            try
+            {
+                using (var ctx = new PortafolioContext())
+                {
+                    ctx.Configuration.ValidateOnSaveEnabled = false;
+
+                    var eUsuario = ctx.Entry(this);
+                    eUsuario.State = EntityState.Modified;
+
+                    // Campos que queremos ignorar
+                    if (Foto != null)
+                    {
+                        // Nombre del archivo, es decir, lo renombramos para que no se repita nunca
+                        string archivo = DateTime.Now.ToString("yyyyMMddHHmmss") + Path.GetExtension(Foto.FileName);
+
+                        // La ruta donde lo vamos guardar
+                        Foto.SaveAs(HttpContext.Current.Server.MapPath("~/uploads/" + archivo));
+
+                        // Establecemos en nuestro modelo el nombre del archivo
+                        this.Foto = archivo;
+                    }
+                    else eUsuario.Property(x => x.Foto).IsModified = false;
+
+                    if (this.Password == null) eUsuario.Property(x => x.Password).IsModified = false;
+
+                    ctx.SaveChanges();
+
+                    rm.SetResponse(true);
+                }
+            }
+            catch (DbEntityValidationException e)
+            {
+                throw;
+            }
+           
+            catch (Exception e)
+            {
+                throw;
+            }
+            return rm;
         }
 
     }
